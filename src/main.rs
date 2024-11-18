@@ -1,6 +1,7 @@
 use std::io::{self, BufRead};
 use pest::Parser;
 use pest::iterators::Pairs;
+use pest::pratt_parser::PrattParser;
 use pest_derive::Parser;
 
 #[derive(Parser)]
@@ -10,6 +11,7 @@ pub struct CalculatorParser;
 #[derive(Debug)]
 pub enum Expr {
     Integer(i32),
+    UnaryMinus(Box<Expr>),
     BinOp {
         lhs: Box<Expr>,
         op: Op,
@@ -23,16 +25,18 @@ pub enum Op {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
 }
 
 lazy_static::lazy_static! {
-    static ref PRATT_PARSER: pest::pratt_parser::PrattParser<Rule> = {
+    static ref PRATT_PARSER: PrattParser<Rule> = {
         use pest::pratt_parser::{Assoc::*, Op};
         use Rule::*;
 
-        pest::pratt_parser::PrattParser::new()
+        PrattParser::new()
             .op(Op::infix(add, Left) | Op::infix(subtract, Left))
-            .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
+            .op(Op::infix(multiply, Left) | Op::infix(divide, Left) | Op::infix(modulo, Left))
+            .op(Op::prefix(unary_minus))
     };
 }
 
@@ -40,7 +44,8 @@ pub fn parse_expr(pairs: Pairs<Rule>) -> Expr {
     PRATT_PARSER
         .map_primary(|primary| match primary.as_rule() {
             Rule::integer => Expr::Integer(primary.as_str().parse::<i32>().unwrap()),
-            rule => unreachable!("Expr::parse expected atom, found {:?}", rule)
+            Rule::expr => parse_expr(primary.into_inner()),
+            rule => unreachable!("Expr::parse expected atom, found {:?}", rule),
         })
         .map_infix(|lhs, op, rhs| {
             let op = match op.as_rule() {
@@ -48,6 +53,7 @@ pub fn parse_expr(pairs: Pairs<Rule>) -> Expr {
                 Rule::subtract => Op::Subtract,
                 Rule::multiply => Op::Multiply,
                 Rule::divide => Op::Divide,
+                Rule::modulo => Op::Modulo,
                 rule => unreachable!("Expr::parse expected infix operation, found {:?}", rule),
             };
             Expr::BinOp {
@@ -55,6 +61,10 @@ pub fn parse_expr(pairs: Pairs<Rule>) -> Expr {
                 op,
                 rhs: Box::new(rhs),
             }
+        })
+        .map_prefix(|op, rhs| match op.as_rule() {
+            Rule::unary_minus => Expr::UnaryMinus(Box::new(rhs)),
+            _ => unreachable!(),
         })
         .parse(pairs)
 }
