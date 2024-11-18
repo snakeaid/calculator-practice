@@ -28,6 +28,26 @@ pub enum Op {
     Modulo,
 }
 
+impl Expr {
+    pub fn evaluate(&self) -> i32 {
+        match self {
+            Expr::Integer(value) => *value,
+            Expr::UnaryMinus(expr) => -expr.evaluate(),
+            Expr::BinOp { lhs, op, rhs } => {
+                let left = lhs.evaluate();
+                let right = rhs.evaluate();
+                match op {
+                    Op::Add => left + right,
+                    Op::Subtract => left - right,
+                    Op::Multiply => left * right,
+                    Op::Divide => left / right,
+                    Op::Modulo => left % right,
+                }
+            }
+        }
+    }
+}
+
 lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
         use pest::pratt_parser::{Assoc::*, Op};
@@ -73,10 +93,9 @@ fn main() -> io::Result<()> {
     for line in io::stdin().lock().lines() {
         match CalculatorParser::parse(Rule::equation, &line?) {
             Ok(mut pairs) => {
-                println!(
-                    "Parsed: {:#?}",
-                    parse_expr(pairs.next().unwrap().into_inner())
-                );
+                let expr = parse_expr(pairs.next().unwrap().into_inner());
+                println!("Parsed: {:#?}", expr);
+                println!("Result: {}", expr.evaluate());
             }
             Err(e) => {
                 eprintln!("Parse failed: {:?}", e);
